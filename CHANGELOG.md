@@ -1,0 +1,30 @@
+# Changelog
+
+## 0.1.5
+
+- Remove the unused Windows wrapper binary and C# source.
+- Keep the repository source-only and easier to audit.
+
+## 0.1.4
+
+- Polished README for open-source release.
+- Added repository visuals and packaging workflow.
+- Kept only the latest VSIX artifact locally.
+
+## 0.1.3
+
+- Always show the native ChatGPT account-login profile in the UI.
+- Keep ChatGPT as a reserved profile name.
+
+## 0.1.2
+
+- Treat ChatGPT login as Codex native mode by clearing top-level `profile`.
+- Stop writing `profile = "chatgpt"` for newer Codex versions.
+- Remove automatic `chatgpt.cliExecutable` override.
+
+## 0.1.0
+
+- Initial minimal VS Code extension.
+- Add/edit Codex custom provider profiles.
+- Store API keys outside `config.toml`.
+- Test `/responses` and fetch `/models`.

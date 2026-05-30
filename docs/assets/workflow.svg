@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-label="Codex Relay Lite workflow">
+  <defs>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0f172a"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+    <linearGradient id="line" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#38bdf8"/>
+      <stop offset="0.5" stop-color="#a7f3d0"/>
+      <stop offset="1" stop-color="#facc15"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="360" rx="22" fill="#f8fafc"/>
+  <text x="64" y="62" fill="#0f172a" font-family="Segoe UI, Microsoft YaHei, Arial, sans-serif" font-size="30" font-weight="800">一个按钮完成 Codex 中转配置闭环</text>
+  <text x="64" y="96" fill="#475569" font-family="Segoe UI, Microsoft YaHei, Arial, sans-serif" font-size="17">保留 ChatGPT 账号登录，同时把 OpenAI-compatible provider 写入 Codex CLI 标准配置。</text>
+
+  <rect x="78" y="158" width="1044" height="6" rx="3" fill="url(#line)"/>
+
+  <g font-family="Segoe UI, Microsoft YaHei, Arial, sans-serif">
+    <g transform="translate(64 128)">
+      <rect x="0" y="0" width="210" height="150" rx="16" fill="url(#panel)" stroke="#334155"/>
+      <text x="24" y="42" fill="#bae6fd" font-size="15" font-weight="700">1. 读取</text>
+      <text x="24" y="76" fill="#f8fafc" font-size="18" font-weight="800">config.toml</text>
+      <text x="24" y="112" fill="#cbd5e1" font-size="14">识别 profile / provider</text>
+    </g>
+    <g transform="translate(320 128)">
+      <rect x="0" y="0" width="210" height="150" rx="16" fill="url(#panel)" stroke="#334155"/>
+      <text x="24" y="42" fill="#bbf7d0" font-size="15" font-weight="700">2. 填写</text>
+      <text x="24" y="76" fill="#f8fafc" font-size="18" font-weight="800">中转站参数</text>
+      <text x="24" y="112" fill="#cbd5e1" font-size="14">Base URL / Key / Model</text>
+    </g>
+    <g transform="translate(576 128)">
+      <rect x="0" y="0" width="210" height="150" rx="16" fill="url(#panel)" stroke="#334155"/>
+      <text x="24" y="42" fill="#fde68a" font-size="15" font-weight="700">3. 保护</text>
+      <text x="24" y="76" fill="#f8fafc" font-size="18" font-weight="800">密钥不落盘</text>
+      <text x="24" y="112" fill="#cbd5e1" font-size="14">SecretStorage + 用户环境变量</text>
+    </g>
+    <g transform="translate(832 128)">
+      <rect x="0" y="0" width="270" height="150" rx="16" fill="url(#panel)" stroke="#334155"/>
+      <text x="24" y="42" fill="#f0abfc" font-size="15" font-weight="700">4. 切换</text>
+      <text x="24" y="76" fill="#f8fafc" font-size="18" font-weight="800">ChatGPT / Relay</text>
+      <text x="24" y="112" fill="#cbd5e1" font-size="14">应用默认 profile 或复制启动命令</text>
+    </g>
+  </g>
+</svg>

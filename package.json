@@ -1,0 +1,73 @@
+{
+  "name": "codex-relay-lite",
+  "displayName": "Codex Relay Lite",
+  "description": "中文 Windows 用户的极简 Codex 中转站配置器。",
+  "version": "0.1.5",
+  "publisher": "local",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.84.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "codex",
+    "relay",
+    "openai-compatible",
+    "deepseek",
+    "windows"
+  ],
+  "activationEvents": [
+    "onView:codexRelayLite.view",
+    "onCommand:codexRelayLite.open",
+    "onCommand:codexRelayLite.refresh"
+  ],
+  "main": "./extension.js",
+  "files": [
+    "extension.js",
+    "package.json",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "docs/**",
+    "media/**"
+  ],
+  "scripts": {
+    "check": "node --check extension.js",
+    "package": "npx @vscode/vsce package --no-dependencies --allow-missing-repository --no-rewrite-relative-links"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "codexRelayLite.open",
+        "title": "Codex Relay Lite: 打开"
+      },
+      {
+        "command": "codexRelayLite.refresh",
+        "title": "Codex Relay Lite: 刷新状态"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "codexRelayLite",
+          "title": "Codex Relay Lite",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "codexRelayLite": [
+        {
+          "id": "codexRelayLite.view",
+          "name": "Codex Relay Lite",
+          "type": "webview"
+        }
+      ]
+    }
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.84.0"
+  }
+}
