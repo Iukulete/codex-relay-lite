@@ -5,6 +5,7 @@
 - Add hover-only delete controls for relay profiles.
 - Block deletion of ChatGPT/OpenAI account-login profiles.
 - Back up `config.toml` before profile deletion.
+- Fix the profile delete confirmation string so the Webview script loads correctly.
 
 ## 0.1.5
 
