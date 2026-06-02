@@ -73,6 +73,12 @@ function bindMessages(webview, context) {
         await sendState(webview, context);
         return;
       }
+      if (message.type === "deleteProfile") {
+        const result = await deleteProfile(message.profile || "", context);
+        webview.postMessage({ type: "notice", tone: "ready", text: result.message });
+        await sendState(webview, context);
+        return;
+      }
       if (message.type === "testProvider") {
         const result = await testProvider(message.provider || {}, context);
         webview.postMessage({ type: "testResult", result });
@@ -373,6 +379,69 @@ async function applyProfile(rawProfile) {
     return { ok: true, message: "已切回 ChatGPT 账号登录：已删除顶层 profile 配置。\n请新开 Codex 线程让 Codex 面板读取最新配置。" };
   }
   return { ok: true, message: "已切换默认 profile：" + profile + "\n请新开 Codex 线程让 Codex 面板读取最新 profile。" };
+}
+
+async function deleteProfile(rawProfile, context) {
+  const profile = normalizeProfileId(rawProfile);
+  if (!profile) {
+    throw new Error("profile 名称无效");
+  }
+
+  const configPath = codexConfigPath();
+  const text = readTextIfExists(configPath);
+  const profiles = parseProfiles(text);
+  const providers = parseProviders(text);
+  const selected = profiles[profile];
+  if (!selected) {
+    throw new Error("未在 Codex config 中找到 profile：" + profile);
+  }
+  if (profile === CHATGPT_PROFILE || selected.model_provider === "openai") {
+    throw new Error("账号登录 profile 不能删除，只能删除中转站 profile");
+  }
+
+  const providerId = selected.model_provider || profile;
+  const provider = providers[providerId] || providers[profile];
+  if (!provider || !provider.base_url) {
+    throw new Error("只能删除由中转站配置生成的 profile");
+  }
+
+  backupCodexConfig(configPath);
+
+  let next = normalizeNewlines(text);
+  next = removeTable(next, "profiles." + profile).trimEnd();
+
+  const providerStillUsed = Object.entries(profiles).some(([id, item]) => {
+    if (id === profile) {
+      return false;
+    }
+    return (item.model_provider || "") === providerId;
+  });
+  if (!providerStillUsed) {
+    next = removeTable(next, "model_providers." + providerId).trimEnd();
+  }
+
+  if (parseDefaultProfile(text) === profile) {
+    next = clearDefaultProfile(next);
+  } else {
+    next = next.trimEnd() + "\n";
+  }
+
+  assertUtf8Text(next);
+  fs.writeFileSync(configPath, next, "utf8");
+  readTextIfExists(configPath);
+
+  if (context && context.secrets && provider.env_key && !envKeyStillReferenced(next, provider.env_key)) {
+    await context.secrets.delete(secretKeyForEnv(provider.env_key));
+  }
+
+  return {
+    ok: true,
+    message: "已删除中转 profile：" + profile + "\n已自动备份 config.toml；账号登录 profile 未受影响。",
+  };
+}
+
+function envKeyStillReferenced(text, envKey) {
+  return Object.values(parseProviders(text)).some((provider) => provider && provider.env_key === envKey);
 }
 
 function backupCodexConfig(configPath) {
@@ -1063,12 +1132,41 @@ function renderHtml(webview) {
       box-shadow: 0 10px 28px rgba(0, 0, 0, 0.38);
     }
     .selectbox-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
       padding: 7px 9px;
       min-height: 30px;
       overflow: hidden;
+      cursor: pointer;
+    }
+    .selectbox-option-label {
+      min-width: 0;
+      flex: 1 1 auto;
+      overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      cursor: pointer;
+    }
+    .selectbox-delete {
+      flex: 0 0 auto;
+      width: 20px;
+      height: 20px;
+      min-width: 20px;
+      padding: 0;
+      border-color: transparent;
+      background: transparent;
+      color: var(--muted);
+      opacity: 0;
+      line-height: 18px;
+    }
+    .selectbox-option:hover .selectbox-delete,
+    .selectbox-delete:focus {
+      opacity: 1;
+    }
+    .selectbox-delete:hover {
+      border-color: color-mix(in srgb, var(--danger) 65%, var(--line));
+      color: var(--danger);
+      background: color-mix(in srgb, var(--danger) 12%, transparent);
     }
     .selectbox-option:hover,
     .selectbox-option.active {
@@ -1118,6 +1216,7 @@ function renderHtml(webview) {
       gap: 8px;
     }
     .profile-row {
+      position: relative;
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto auto auto auto;
       align-items: center;
@@ -1125,7 +1224,7 @@ function renderHtml(webview) {
       border: 1px solid var(--line);
       border-radius: 7px;
       background: var(--panel-2);
-      padding: 9px;
+      padding: 9px 34px 9px 9px;
     }
     .profile-main {
       min-width: 0;
@@ -1165,6 +1264,32 @@ function renderHtml(webview) {
     .profile-row button {
       min-width: 62px;
       padding: 6px 8px;
+    }
+    .profile-delete {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 22px;
+      height: 22px;
+      min-width: 22px;
+      padding: 0;
+      border-color: transparent;
+      border-radius: 50%;
+      background: transparent;
+      color: var(--muted);
+      opacity: 0;
+      font-size: 16px;
+      line-height: 18px;
+      transition: opacity 120ms ease, color 120ms ease, background 120ms ease, border-color 120ms ease;
+    }
+    .profile-row:hover .profile-delete,
+    .profile-delete:focus {
+      opacity: 1;
+    }
+    .profile-delete:hover {
+      border-color: color-mix(in srgb, var(--danger) 65%, var(--line));
+      color: var(--danger);
+      background: color-mix(in srgb, var(--danger) 12%, transparent);
     }
     .field-head {
       display: flex;
@@ -1448,6 +1573,14 @@ function renderHtml(webview) {
         }
       });
       menu.addEventListener("mousedown", (event) => {
+        const deleteButton = event.target.closest(".selectbox-delete[data-profile]");
+        if (deleteButton) {
+          event.preventDefault();
+          event.stopPropagation();
+          closeCustomSelect(id);
+          requestDeleteProfile(deleteButton.dataset.profile);
+          return;
+        }
         const item = event.target.closest(".selectbox-option[data-value]");
         if (!item) {
           return;
@@ -1475,7 +1608,13 @@ function renderHtml(webview) {
         const row = document.createElement("div");
         row.className = "selectbox-option" + (option.value === item.select.value ? " active" : "");
         row.dataset.value = option.value;
-        row.textContent = option.textContent;
+        const label = document.createElement("span");
+        label.className = "selectbox-option-label";
+        label.textContent = option.textContent;
+        row.appendChild(label);
+        if (id === "existingProfile" && canDeleteProfile(option.value)) {
+          row.appendChild(deleteProfileButton(option.value, "从配置列表删除", "selectbox-delete"));
+        }
         item.menu.appendChild(row);
       }
     }
@@ -1580,6 +1719,46 @@ function renderHtml(webview) {
     function commandForProfile(profile) {
       const normalized = String(profile || "").trim().replace(/\\s+/g, "-");
       return normalized ? "codex -p " + normalized : "codex";
+    }
+
+    function canDeleteProfile(id, state = latestState) {
+      if (!id || id === "chatgpt") {
+        return false;
+      }
+      const profile = (state.profiles || {})[id];
+      if (!profile || (profile.model_provider || "") === "openai") {
+        return false;
+      }
+      const providerId = profile.model_provider || id;
+      const provider = (state.providers || {})[providerId] || (state.providers || {})[id] || {};
+      return Boolean(provider.base_url);
+    }
+
+    function deleteProfileButton(profile, title, className = "profile-delete") {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = className;
+      button.textContent = "×";
+      button.title = title;
+      button.setAttribute("aria-label", title);
+      button.dataset.profile = profile;
+      if (className === "profile-delete") {
+        button.dataset.action = "delete";
+      }
+      return button;
+    }
+
+    function requestDeleteProfile(profile) {
+      if (!canDeleteProfile(profile)) {
+        notice("账号登录 profile 不能删除，只能删除中转站 profile。", "error");
+        return;
+      }
+      const ok = confirm("删除中转 profile：" + profile + "\n\n会从 config.toml 删除对应 [profiles] / [model_providers] 块，并自动备份。");
+      if (!ok) {
+        return;
+      }
+      notice("正在删除 profile：" + profile, "");
+      vscode.postMessage({ type: "deleteProfile", profile });
     }
 
     function updateKeyHint() {
@@ -1692,6 +1871,9 @@ function renderHtml(webview) {
         row.appendChild(profileButton("复制", "copy", id, false));
         row.appendChild(profileButton("打开", "open", id, false));
         row.appendChild(profileButton("编辑", "edit", id, !provider.base_url));
+        if (canDeleteProfile(id, state)) {
+          row.appendChild(deleteProfileButton(id, "删除这个中转 profile"));
+        }
         list.appendChild(row);
       }
     }
@@ -1770,6 +1952,8 @@ function renderHtml(webview) {
       } else if (action === "edit") {
         $("existingProfile").value = profile;
         fillFromExistingProfile(profile);
+      } else if (action === "delete") {
+        requestDeleteProfile(profile);
       }
     });
     $("existingProfile").addEventListener("change", () => fillFromExistingProfile($("existingProfile").value));
