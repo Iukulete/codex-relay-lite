@@ -405,7 +405,7 @@ async function deleteProfile(rawProfile, context) {
     throw new Error("只能删除由中转站配置生成的 profile");
   }
 
-  backupCodexConfig(configPath);
+  const backupPath = backupCodexConfig(configPath);
 
   let next = normalizeNewlines(text);
   next = removeTable(next, "profiles." + profile).trimEnd();
@@ -436,7 +436,7 @@ async function deleteProfile(rawProfile, context) {
 
   return {
     ok: true,
-    message: "已删除中转 profile：" + profile + "\n已自动备份 config.toml；账号登录 profile 未受影响。",
+    message: "已删除中转 profile：" + profile + "\n已自动备份：" + path.basename(backupPath || "config.toml.bak") + "\n账号登录 profile 未受影响。",
   };
 }
 
@@ -1742,8 +1742,13 @@ function renderHtml(webview) {
       button.title = title;
       button.setAttribute("aria-label", title);
       button.dataset.profile = profile;
+      button.dataset.action = "delete";
       if (className === "profile-delete") {
-        button.dataset.action = "delete";
+        button.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          requestDeleteProfile(profile);
+        });
       }
       return button;
     }
@@ -1938,6 +1943,13 @@ function renderHtml(webview) {
       updateKeyHint();
     });
     $("profileList").addEventListener("click", (event) => {
+      const deleteButton = event.target.closest(".profile-delete[data-profile]");
+      if (deleteButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        requestDeleteProfile(deleteButton.dataset.profile);
+        return;
+      }
       const button = event.target.closest("button[data-action]");
       if (!button || button.disabled) return;
       const action = button.dataset.action;
