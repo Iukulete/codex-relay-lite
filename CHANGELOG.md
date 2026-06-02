@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.6
+
+- Add hover-only delete controls for relay profiles.
+- Block deletion of ChatGPT/OpenAI account-login profiles.
+- Back up `config.toml` before profile deletion.
+
 ## 0.1.5
 
 - Remove the unused Windows wrapper binary and C# source.
