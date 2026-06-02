@@ -1758,11 +1758,7 @@ function renderHtml(webview) {
         notice("账号登录 profile 不能删除，只能删除中转站 profile。", "error");
         return;
       }
-      const ok = confirm("删除中转 profile：" + profile + "\\n\\n会从 config.toml 删除对应 [profiles] / [model_providers] 块，并自动备份。");
-      if (!ok) {
-        return;
-      }
-      notice("正在删除 profile：" + profile, "");
+      notice("正在删除保存配置：" + profile, "");
       vscode.postMessage({ type: "deleteProfile", profile });
     }
 
