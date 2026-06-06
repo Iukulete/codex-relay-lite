@@ -40,7 +40,27 @@ jobs:
       - name: Read package version
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         id: version
-        run: echo "version=v$(node -p 'require(\"./package.json\").version')" >> "$GITHUB_OUTPUT"
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          echo "version=v${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Remove malformed v release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            try {
+              const release = await github.rest.repos.getReleaseByTag({ owner, repo, tag: "v" });
+              await github.rest.repos.deleteRelease({ owner, repo, release_id: release.data.id });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+            try {
+              await github.rest.git.deleteRef({ owner, repo, ref: "tags/v" });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
