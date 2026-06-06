@@ -142,7 +142,15 @@ async function sendState(webview, context) {
 }
 
 function codexConfigPath() {
-  return path.join(os.homedir(), ".codex", "config.toml");
+  return path.join(codexConfigDir(), "config.toml");
+}
+
+function codexConfigDir() {
+  return path.join(os.homedir(), ".codex");
+}
+
+function codexProfileConfigPath(profile) {
+  return path.join(codexConfigDir(), `${profile}.config.toml`);
 }
 
 function hydrateRelayEnvironmentAtStartup() {
@@ -236,18 +244,12 @@ function assertUtf8Text(text) {
 }
 
 function parseDefaultProfile(text) {
-  const lines = normalizeNewlines(text).split("\n");
-  const firstTable = lines.findIndex((line) => /^\s*\[/.test(line));
-  const limit = firstTable === -1 ? lines.length : firstTable;
-  for (let index = 0; index < limit; index += 1) {
-    const line = lines[index];
-    if (/^\s*#/.test(line)) {
-      continue;
-    }
-    const match = line.match(/^\s*profile\s*=\s*"([^"]+)"/);
-    if (match) {
-      return match[1];
-    }
+  const topLevel = parseTopLevelAssignments(text);
+  if (topLevel.model_provider && topLevel.model_provider !== "openai") {
+    return topLevel.model_provider;
+  }
+  if (topLevel.profile && topLevel.profile !== CHATGPT_PROFILE) {
+    return topLevel.profile;
   }
   return CHATGPT_PROFILE;
 }
@@ -262,7 +264,38 @@ function parseProfiles(text) {
       model: data.model || "",
     };
   }
+  const topLevel = parseTopLevelAssignments(text);
+  const providers = parseProviders(text);
+  for (const id of Object.keys(providers)) {
+    const profileConfig = parseProfileConfigFile(id);
+    const existing = result[id] || {};
+    result[id] = {
+      id,
+      model_provider: existing.model_provider || profileConfig.model_provider || id,
+      model: existing.model || profileConfig.model || (topLevel.model_provider === id ? topLevel.model || "" : ""),
+    };
+  }
   return result;
+}
+
+function parseTopLevelAssignments(text) {
+  const lines = normalizeNewlines(text).split("\n");
+  const firstTable = lines.findIndex((line) => /^\s*\[/.test(line));
+  const limit = firstTable === -1 ? lines.length : firstTable;
+  return parseAssignments(lines.slice(0, limit));
+}
+
+function parseProfileConfigFile(profile) {
+  try {
+    const text = readTextIfExists(codexProfileConfigPath(profile));
+    const topLevel = parseTopLevelAssignments(text);
+    return {
+      model_provider: topLevel.model_provider || "",
+      model: topLevel.model || "",
+    };
+  } catch {
+    return {};
+  }
 }
 
 function parseProviders(text) {
@@ -343,10 +376,12 @@ async function saveProvider(rawProvider, context) {
   }
 
   let text = readTextIfExists(configPath);
+  const defaultBefore = parseDefaultProfile(text);
   backupCodexConfig(configPath);
   text = upsertProviderBlocks(text, provider);
-  if (provider.setDefault) {
-    text = setDefaultProfile(text, provider.profile);
+  writeProfileConfig(provider);
+  if (provider.setDefault || defaultBefore === provider.profile) {
+    text = setDefaultProvider(text, provider);
   }
   assertUtf8Text(text);
   fs.writeFileSync(configPath, text, "utf8");
@@ -367,18 +402,33 @@ async function applyProfile(rawProfile) {
   const configPath = codexConfigPath();
   const text = readTextIfExists(configPath);
   const profiles = parseProfiles(text);
-  if (profile !== CHATGPT_PROFILE && !profiles[profile]) {
-    throw new Error("未在 Codex config 中找到 profile：" + profile);
+  const providers = parseProviders(text);
+  let next = "";
+  if (profile === CHATGPT_PROFILE) {
+    next = clearDefaultProvider(text);
+  } else {
+    const selected = profiles[profile];
+    const providerId = selected && selected.model_provider ? selected.model_provider : profile;
+    const provider = providers[providerId] || providers[profile];
+    if (!selected || !provider || !provider.base_url) {
+      throw new Error("未在 Codex config 中找到中转站：" + profile);
+    }
+    if (!selected.model) {
+      throw new Error("未找到模型名，请先编辑并保存这个中转站：" + profile);
+    }
+    next = setDefaultProvider(removeTable(text, "profiles." + profile), {
+      profile: providerId,
+      model: selected.model,
+    });
   }
   backupCodexConfig(configPath);
-  const next = setDefaultProfile(text, profile);
   assertUtf8Text(next);
   fs.writeFileSync(configPath, next, "utf8");
   readTextIfExists(configPath);
   if (profile === CHATGPT_PROFILE) {
-    return { ok: true, message: "已切回 ChatGPT 账号登录：已删除顶层 profile 配置。\n请新开 Codex 线程让 Codex 面板读取最新配置。" };
+    return { ok: true, message: "已切回 ChatGPT 账号登录：已清理顶层中转站默认配置。\n请新开 Codex 线程让 Codex 面板读取最新配置。" };
   }
-  return { ok: true, message: "已切换默认 profile：" + profile + "\n请新开 Codex 线程让 Codex 面板读取最新 profile。" };
+  return { ok: true, message: "已切换默认中转站：" + profile + "\n请新开 Codex 线程让 Codex 面板读取最新配置。" };
 }
 
 async function deleteProfile(rawProfile, context) {
@@ -420,8 +470,8 @@ async function deleteProfile(rawProfile, context) {
     next = removeTable(next, "model_providers." + providerId).trimEnd();
   }
 
-  if (parseDefaultProfile(text) === profile) {
-    next = clearDefaultProfile(next);
+  if (parseDefaultProfile(text) === profile || parseDefaultProfile(text) === providerId) {
+    next = clearDefaultProvider(next);
   } else {
     next = next.trimEnd() + "\n";
   }
@@ -429,6 +479,12 @@ async function deleteProfile(rawProfile, context) {
   assertUtf8Text(next);
   fs.writeFileSync(configPath, next, "utf8");
   readTextIfExists(configPath);
+
+  const profileConfigPath = codexProfileConfigPath(profile);
+  if (fs.existsSync(profileConfigPath)) {
+    backupCodexConfig(profileConfigPath);
+    fs.unlinkSync(profileConfigPath);
+  }
 
   if (context && context.secrets && provider.env_key && !envKeyStillReferenced(next, provider.env_key)) {
     await context.secrets.delete(secretKeyForEnv(provider.env_key));
@@ -603,13 +659,25 @@ function normalizeApiKey(value) {
 }
 
 function upsertProviderBlocks(text, provider) {
-  // Conservative TOML editing: only replace the exact simple profile/provider
-  // tables managed by this extension, then append fresh blocks at the end.
+  // Conservative TOML editing: remove legacy profile tables generated by older
+  // releases, then replace the provider block managed by this extension.
   let next = normalizeNewlines(text).trimEnd();
   next = removeTable(next, "profiles." + provider.profile).trimEnd();
   next = removeTable(next, "model_providers." + provider.profile).trimEnd();
   const block = [
-    `[profiles.${provider.profile}]`,
+    `[model_providers.${provider.profile}]`,
+    `name = "${tomlString(provider.displayName)}"`,
+    `base_url = "${tomlString(provider.baseUrl)}"`,
+    `env_key = "${tomlString(provider.envKey)}"`,
+    `wire_api = "${tomlString(provider.wireApi)}"`,
+  ].join("\n");
+  return (next ? next + "\n\n" : "") + block + "\n";
+}
+
+function writeProfileConfig(provider) {
+  const file = codexProfileConfigPath(provider.profile);
+  backupCodexConfig(file);
+  const text = [
     `model_provider = "${tomlString(provider.profile)}"`,
     `model = "${tomlString(provider.model)}"`,
     `model_reasoning_effort = "none"`,
@@ -620,8 +688,11 @@ function upsertProviderBlocks(text, provider) {
     `base_url = "${tomlString(provider.baseUrl)}"`,
     `env_key = "${tomlString(provider.envKey)}"`,
     `wire_api = "${tomlString(provider.wireApi)}"`,
+    "",
   ].join("\n");
-  return (next ? next + "\n\n" : "") + block + "\n";
+  assertUtf8Text(text);
+  fs.writeFileSync(file, text, "utf8");
+  readTextIfExists(file);
 }
 
 function removeTable(text, tableName) {
@@ -645,29 +716,58 @@ function removeTable(text, tableName) {
   return result.join("\n").replace(/\n{3,}/g, "\n\n");
 }
 
-function setDefaultProfile(text, profile) {
-  if (profile === CHATGPT_PROFILE) {
-    return clearDefaultProfile(text);
-  }
+function setDefaultProvider(text, provider) {
+  return setTopLevelValues(text, {
+    model_provider: provider.profile,
+    model: provider.model,
+  }, ["profile"]);
+}
+
+function setTopLevelValues(text, values, removeKeys = []) {
   const lines = normalizeNewlines(text).split("\n");
   const firstTable = lines.findIndex((line) => /^\s*\[/.test(line));
   const limit = firstTable === -1 ? lines.length : firstTable;
+  const rest = firstTable === -1 ? [] : lines.slice(firstTable);
+  const keys = new Set([...Object.keys(values), ...removeKeys]);
+  const written = new Set();
+  const top = [];
   for (let index = 0; index < limit; index += 1) {
-    if (!/^\s*#/.test(lines[index]) && /^\s*profile\s*=/.test(lines[index])) {
-      lines[index] = `profile = "${tomlString(profile)}"`;
-      return lines.join("\n").trimEnd() + "\n";
+    const match = lines[index].match(/^\s*([A-Za-z0-9_]+)\s*=/);
+    const key = match ? match[1] : "";
+    if (key && keys.has(key) && !/^\s*#/.test(lines[index])) {
+      if (Object.prototype.hasOwnProperty.call(values, key) && !written.has(key)) {
+        top.push(`${key} = "${tomlString(values[key])}"`);
+        written.add(key);
+      }
+      continue;
+    }
+    top.push(lines[index]);
+  }
+  const missing = Object.keys(values).filter((key) => !written.has(key));
+  if (missing.length) {
+    const insertion = missing.map((key) => `${key} = "${tomlString(values[key])}"`);
+    if (top.some((line) => line.trim())) {
+      top.unshift(...insertion, "");
+    } else {
+      top.splice(0, top.length, ...insertion);
     }
   }
-  return `profile = "${tomlString(profile)}"\n\n` + normalizeNewlines(text).trimStart();
+  return top.concat(rest).join("\n").replace(/^\n+/, "").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
 }
 
-function clearDefaultProfile(text) {
+function clearDefaultProvider(text) {
+  return removeTopLevelKeys(text, ["profile", "model_provider", "model"]);
+}
+
+function removeTopLevelKeys(text, keysToRemove) {
   const lines = normalizeNewlines(text).split("\n");
   const firstTable = lines.findIndex((line) => /^\s*\[/.test(line));
   const limit = firstTable === -1 ? lines.length : firstTable;
   const result = [];
+  const keys = new Set(keysToRemove);
   for (let index = 0; index < lines.length; index += 1) {
-    if (index < limit && !/^\s*#/.test(lines[index]) && /^\s*profile\s*=/.test(lines[index])) {
+    const match = lines[index].match(/^\s*([A-Za-z0-9_]+)\s*=/);
+    if (index < limit && match && keys.has(match[1]) && !/^\s*#/.test(lines[index])) {
       continue;
     }
     result.push(lines[index]);
@@ -1412,7 +1512,7 @@ function renderHtml(webview) {
     <section class="card">
       <h2>Profile 切换</h2>
       <div id="profileList" class="profile-list"></div>
-      <p class="help">“应用”中转站会写顶层 <code>profile = "..."</code>；“应用”ChatGPT 会删除顶层 profile，让账号登录走 Codex 原生路径。</p>
+      <p class="help">“应用”中转站会写顶层 <code>model_provider</code> 和 <code>model</code>；“应用”ChatGPT 会清理顶层中转站默认配置，让账号登录走 Codex 原生路径。</p>
     </section>
 
     <section class="card">
@@ -1471,7 +1571,7 @@ function renderHtml(webview) {
 
       <label class="check">
         <input id="setDefault" type="checkbox">
-        设为默认 profile
+        设为默认中转站
       </label>
 
       <div class="actions">
@@ -1486,7 +1586,7 @@ function renderHtml(webview) {
 
     <section class="card">
       <h2>说明</h2>
-      <p class="help">写入格式示例：<code>[profiles.joverna]</code> 和 <code>[model_providers.joverna]</code>。</p>
+      <p class="help">写入格式示例：主配置写 <code>[model_providers.joverna]</code>，并生成 <code>joverna.config.toml</code> 供 <code>codex -p joverna</code> 使用。</p>
       <p class="help">不会删除你现有的 <code>chatgpt</code> 账号登录 profile。</p>
     </section>
   </main>

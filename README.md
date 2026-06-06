@@ -40,7 +40,7 @@ Codex Relay Lite 的价值不是“大而全”，而是把这条链路做成一
 - 读取并展示当前默认 profile、Codex 配置路径、Codex 命令状态
 - 新增、编辑、应用 Codex 中转站 profile
 - 始终保留 ChatGPT 账号登录入口
-- 切回 ChatGPT 时删除顶层 `profile`，走 Codex 原生账号登录路径
+- 切回 ChatGPT 时清理顶层中转站默认配置，走 Codex 原生账号登录路径
 - API Key 保存到 VS Code SecretStorage，并同步到 Windows 用户环境变量
 - UI 只显示密钥长度和点状掩码，不明文回显
 - 保存前备份 `config.toml`
@@ -78,7 +78,7 @@ npm run package
 3. 点击 **刷新模型**，从中转站拉取模型列表，也可以继续手填。
 4. 点击 **测试连接**。
 5. 点击 **保存配置**。
-6. 需要设为默认时，勾选 **设为默认 profile** 或在 Profile 列表点击 **应用**。
+6. 需要设为默认时，勾选 **设为默认中转站** 或在 Profile 列表点击 **应用**。
 
 DeepSeek 官方示例：
 
@@ -98,8 +98,8 @@ wire_api: responses
 
 在 **Profile 切换** 区域：
 
-- 点中转站的 **应用**：写入顶层 `profile = "xxx"`，保存前自动备份。
-- 点 ChatGPT 的 **应用**：删除顶层 `profile`，让新版 Codex 账号登录走原生默认路径。
+- 点中转站的 **应用**：写入顶层 `model_provider = "xxx"` 和 `model = "..."`，保存前自动备份。
+- 点 ChatGPT 的 **应用**：清理顶层 `profile`、`model_provider` 和 `model`，让 Codex 账号登录走原生默认路径。
 - 点 **复制**：复制 `codex -p <profile>`。
 - 点 **打开**：在 VS Code 终端运行 `codex -p <profile>`，并向终端注入对应 API Key。
 - 点 **编辑**：把中转站 profile 载入下方表单。
@@ -109,7 +109,23 @@ wire_api: responses
 保存后会写入类似配置：
 
 ```toml
-[profiles.deepseek]
+[model_providers.deepseek]
+name = "deepseek"
+base_url = "https://api.deepseek.com"
+env_key = "CODEX_RELAY_DEEPSEEK_KEY"
+wire_api = "responses"
+```
+
+如果勾选“设为默认中转站”，还会写入或更新顶层默认值：
+
+```toml
+model_provider = "deepseek"
+model = "deepseek-chat"
+```
+
+同时插件会生成 `~/.codex/deepseek.config.toml`，让 `codex -p deepseek` 继续可用：
+
+```toml
 model_provider = "deepseek"
 model = "deepseek-chat"
 model_reasoning_effort = "none"
@@ -130,7 +146,7 @@ API Key 不写入 `config.toml`。插件会保存到 VS Code SecretStorage，并
 - 不管理 Claude Code / Gemini / MCP。
 - 不自动修改 `chatgpt.cliExecutable`。
 - `chatgpt` 是 Codex 账号登录保留入口，不能作为中转站 profile 名称。
-- TOML 更新采用保守块替换策略，只处理 `[profiles.<name>]` 和 `[model_providers.<name>]` 简单 profile。
+- TOML 更新采用保守块替换策略，只处理简单 `[model_providers.<name>]`，并会移除本插件旧版本生成的 `[profiles.<name>]`。
 - 每次保存前会备份原文件为 `config.toml.bak.<timestamp>`。
 - “测试连接”成功只说明 `/responses` 能返回基础响应；能否稳定运行 Codex agent 工具调用，取决于中转站和模型本身的 Responses API/tool calling 兼容性。
 

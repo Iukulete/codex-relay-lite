@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.7
+
+- Write relay defaults with top-level `model_provider` and `model` for current Codex.
+- Stop writing legacy relay `[profiles.<name>]` blocks to `config.toml`.
+- Generate `<profile>.config.toml` so `codex -p <profile>` continues to work.
+- Clean up top-level relay defaults when switching back to ChatGPT login.
+
 ## 0.1.6
 
 - Add hover-only delete controls for relay profiles.
